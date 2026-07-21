@@ -88,10 +88,18 @@ def firebase_delete_request(chat_id):
     _memory_requests.pop(chat_id, None)
 
 bot = telebot.TeleBot(BOT_TOKEN)
-DB_FILE      = "users_db.txt"
-VIDEOS_FILE  = "videos_db.json"
-BUTTONS_FILE = "buttons_db.json"
-GROUPS_FILE  = "groups_db.txt"
+
+# مجلد التخزين الدائم — اربطه بـ Railway Volume عشان الملفات ما تنمسح
+# عند إعادة تشغيل أو نشر الحاوية. أضف Volume بـ Railway واربطه بمتغير
+# البيئة DATA_DIR (مثلاً DATA_DIR=/data). إذا ما ضفت Volume، البوت
+# يشتغل عادي بس البيانات تنمسح عند كل إعادة تشغيل زي قبل.
+DATA_DIR = os.environ.get('DATA_DIR', '.')
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_FILE      = os.path.join(DATA_DIR, "users_db.txt")
+VIDEOS_FILE  = os.path.join(DATA_DIR, "videos_db.json")
+BUTTONS_FILE = os.path.join(DATA_DIR, "buttons_db.json")
+GROUPS_FILE  = os.path.join(DATA_DIR, "groups_db.txt")
 
 pending_admin   = {}
 pending_video   = {}
@@ -172,18 +180,18 @@ def is_user_replied(user_id_str):
 
 def load_videos():
     if os.path.exists(VIDEOS_FILE):
-        with open(VIDEOS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(VIDEOS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"⚠️ ملف {VIDEOS_FILE} تالف، رح أرجع لقيمة فاضية: {e}")
     return {}
 
 def save_videos(videos):
     with open(VIDEOS_FILE, "w", encoding="utf-8") as f:
         json.dump(videos, f, ensure_ascii=False, indent=2)
 
-def load_buttons():
-    if os.path.exists(BUTTONS_FILE):
-        with open(BUTTONS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+def _default_buttons():
     return {
         "main": [
             {"key": "menu_uber",   "label": "🚖 حول Uber",  "type": "submenu"},
@@ -209,6 +217,15 @@ def load_buttons():
             {"key": "oper_pay", "label": "💳 تسديد Oper", "type": "video"},
         ]
     }
+
+def load_buttons():
+    if os.path.exists(BUTTONS_FILE):
+        try:
+            with open(BUTTONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"⚠️ ملف {BUTTONS_FILE} تالف، رح أرجع للقيم الافتراضية: {e}")
+    return _default_buttons()
 
 def save_buttons(b):
     with open(BUTTONS_FILE, "w", encoding="utf-8") as f:
@@ -694,6 +711,22 @@ def _handle_callbacks_body(call):
 
     if data == "adm_back":
         try: bot.edit_message_text('⚙️ لوحة الإدارة:', chat_id, call.message.message_id, reply_markup=get_admin_panel())
+        except: pass
+        bot.answer_callback_query(call.id)
+        return
+
+    if data == "adm_change_video":
+        markup = telebot.types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            telebot.types.InlineKeyboardButton("📋 القائمة الرئيسية", callback_data="adm_list_main"),
+            telebot.types.InlineKeyboardButton("🚖 Uber",             callback_data="adm_list_uber"),
+            telebot.types.InlineKeyboardButton("🟢 Baly",             callback_data="adm_list_baly"),
+            telebot.types.InlineKeyboardButton("🟡 Oper",             callback_data="adm_list_oper"),
+            telebot.types.InlineKeyboardButton("🔙 رجوع",             callback_data="adm_back"),
+        )
+        try:
+            bot.edit_message_text('🎬 اختر القسم اللي تريد تغيير فيديو زر فيه، بعدها اضغط على الزر المطلوب ثم "🎬 تغيير الفيديو":',
+                                   chat_id, call.message.message_id, reply_markup=markup)
         except: pass
         bot.answer_callback_query(call.id)
         return
@@ -2365,4 +2398,3 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"⚠️ خطأ: {e}")
             time.sleep(10)
-n
